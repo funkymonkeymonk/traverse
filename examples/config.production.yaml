@@ -1,0 +1,224 @@
+# Production Sentinel Configuration
+# This example shows a hardened production setup
+
+server:
+  host: "0.0.0.0"
+  port: 8443
+  
+  # TLS is mandatory in production
+  tls:
+    cert_file: "/etc/traverse/certs/server.crt"
+    key_file: "/etc/traverse/certs/server.key"
+    # Require client certificates for mTLS
+    client_ca_file: "/etc/traverse/certs/ca.crt"
+    client_auth: "require_and_verify"
+  
+  # Rate limiting
+  rate_limit:
+    requests_per_minute: 60
+    burst: 10
+    
+  # CORS settings
+  cors:
+    allowed_origins: ["https://internal.company.com"]
+    allowed_methods: ["GET", "POST"]
+    allowed_headers: ["Authorization", "Content-Type"]
+    max_age: 3600
+
+# Authentication
+auth:
+  type: "mtls"  # Use mutual TLS for stronger auth
+  
+  # API key fallback for legacy clients
+  api_keys:
+    - key: "${SENTINEL_API_KEY_1}"
+      client_id: "ci-runner-prod"
+      allowed_paths: ["prod/*", "shared/*"]
+      rate_limit: 30
+      
+    - key: "${SENTINEL_API_KEY_2}"
+      client_id: "deployment-bot"
+      allowed_paths: ["prod/api-keys/*", "prod/database/*"]
+      rate_limit: 10
+
+# Secret providers
+providers:
+  default: "1password"
+  
+  1password:
+    type: "1password-connect"
+    host: "https://op-connect.internal:8080"
+    token: "${OP_CONNECT_TOKEN}"
+    # Use TLS verification
+    tls:
+      ca_cert: "/etc/traverse/certs/op-ca.crt"
+    # Timeout for requests
+    timeout: "10s"
+    # Retry configuration
+    retry:
+      max_retries: 3
+      backoff: "exponential"
+      
+  # Vault as fallback/secondary
+  vault:
+    type: "hashicorp-vault"
+    address: "https://vault.internal:8200"
+    auth:
+      type: "approle"
+      role_id: "${VAULT_ROLE_ID}"
+      secret_id: "${VAULT_SECRET_ID}"
+    tls:
+      ca_cert: "/etc/traverse/certs/vault-ca.crt"
+
+# Notification providers
+notifications:
+  default: ["duo", "slack"]
+  
+  duo:
+    integration_key: "${DUO_INTEGRATION_KEY}"
+    secret_key: "${DUO_SECRET_KEY}"
+    api_hostname: "api-xxxxxxxx.duosecurity.com"
+    # Fail open if Duo is down (optional)
+    fail_open: false
+    
+  slack:
+    bot_token: "${SLACK_BOT_TOKEN}"
+    # Post to this channel for audit trail
+    approver_channel: "#security-approvals"
+    # Also DM approvers
+    dm_users: true
+    
+  # Emergency notifications via PagerDuty
+  pagerduty:
+    integration_key: "${PAGERDUTY_KEY}"
+    # Only for critical paths
+    severity: "critical"
+
+# Approval policies with path-specific rules
+policies:
+  default:
+    required_approvals: 1
+    max_duration: "4h"
+    request_timeout: "10m"
+    allow_self_approval: false
+    require_justification: true
+    min_justification_length: 20
+    
+  # Production requires dual approval
+  overrides:
+    - path_pattern: "prod/*"
+      required_approvals: 2
+      max_duration: "1h"
+      request_timeout: "15m"
+      approver_groups: ["ops-oncall", "security-team"]
+      require_manager_approval: true
+      
+    - path_pattern: "prod/database/*"
+      required_approvals: 2
+      max_duration: "30m"
+      request_timeout: "10m"
+      approver_groups: ["dba-oncall", "security-team"]
+      # Notify on-call DBA via PagerDuty
+      notification_channels: ["pagerduty", "slack"]
+      
+    - path_pattern: "*/admin"
+      required_approvals: 3
+      max_duration: "15m"
+      request_timeout: "5m"
+      approver_groups: ["senior-staff"]
+      
+    - path_pattern: "shared/*"
+      required_approvals: 1
+      max_duration: "8h"
+      request_timeout: "30m"
+
+# Audit logging - send to multiple destinations
+audit:
+  type: "multi"
+  
+  destinations:
+    # Local file for immediate investigation
+    - type: "file"
+      file:
+        path: "/var/log/traverse/audit.log"
+        max_size: 100  # MB
+        max_backups: 30
+        max_age: 90    # days
+        compress: true
+        
+    # Syslog for centralized logging
+    - type: "syslog"
+      syslog:
+        network: "tcp"
+        address: "syslog.internal:514"
+        tag: "traverse"
+        
+    # Webhook to SIEM
+    - type: "webhook"
+      webhook:
+        url: "https://siem.company.com/api/events"
+        headers:
+          Authorization: "Bearer ${SIEM_TOKEN}"
+          X-Source: "traverse"
+        # Only send these event types to SIEM
+        filter_events: ["REQUEST_CREATED", "REQUEST_APPROVED", "SECRET_ACCESSED"]
+        timeout: "5s"
+        retry:
+          max_retries: 3
+
+# Database for request state
+storage:
+  type: "postgresql"
+  postgresql:
+    host: "postgres.internal"
+    port: 5432
+    database: "traverse"
+    user: "traverse"
+    password: "${DB_PASSWORD}"
+    # Connection pool
+    max_connections: 20
+    max_idle: 5
+    # SSL mode
+    ssl_mode: "verify-full"
+    ssl_cert: "/etc/traverse/certs/postgres-client.crt"
+    ssl_key: "/etc/traverse/certs/postgres-client.key"
+    ssl_root_cert: "/etc/traverse/certs/postgres-ca.crt"
+    
+  # Enable automatic cleanup of old requests
+  cleanup:
+    enabled: true
+    # Delete completed requests after 90 days
+    retention_days: 90
+    # Run cleanup daily at 3 AM
+    schedule: "0 3 * * *"
+
+# Monitoring and metrics
+metrics:
+  enabled: true
+  type: "prometheus"
+  prometheus:
+    port: 9090
+    path: "/metrics"
+    # Additional labels
+    labels:
+      environment: "production"
+      cluster: "primary"
+
+# Health check configuration
+health:
+  enabled: true
+  port: 8081
+  path: "/health"
+  # Detailed health includes provider status
+  detailed: true
+
+# Emergency break-glass access
+break_glass:
+  enabled: true
+  # Special admin token that bypasses approval
+  # Requires physical hardware token or HSM
+  require_hardware_token: true
+  # Log to separate audit stream
+  audit_severity: "critical"
+  # Notify security team immediately
+  notify: ["security@company.com", "#security-alerts"]
