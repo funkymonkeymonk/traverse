@@ -1,0 +1,61 @@
+# Minimal Sentinel Configuration
+# This is a complete working example for development/testing
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # TLS is recommended but optional for development
+  # tls:
+  #   cert_file: "/etc/traverse/server.crt"
+  #   key_file: "/etc/traverse/server.key"
+
+# Client authentication
+auth:
+  type: "api_key"
+  api_keys:
+    - key: "dev_api_key_change_in_production"
+      client_id: "dev-agent"
+      # Allow access to all paths in development
+      allowed_paths: ["*"]
+      # No rate limits in dev
+      rate_limit: 0
+
+# Secret provider configuration
+providers:
+  default: "local"
+  
+  # Local file provider - stores secrets in encrypted files
+  local:
+    type: "local"
+    base_path: "/var/lib/traverse/secrets"
+    # Use age encryption
+    encryption:
+      type: "age"
+      recipient: "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+
+# Notification configuration
+notifications:
+  default: ["webhook"]
+  
+  # Simple webhook for development
+  webhook:
+    url: "http://localhost:3000/traverse-webhook"
+    secret: "webhook_secret_key"
+
+# Approval policies
+policies:
+  default:
+    required_approvals: 1
+    max_duration: "1h"
+    request_timeout: "5m"
+    allow_self_approval: true  # Allow in dev for testing
+
+# Audit logging
+audit:
+  type: "stdout"  # Log to console in dev
+
+# Storage
+storage:
+  type: "sqlite"
+  sqlite:
+    path: "/var/lib/traverse/traverse.db"

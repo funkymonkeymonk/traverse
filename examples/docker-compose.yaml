@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # Sentinel proxy service
+  traverse:
+    image: funkymonkeymonk/traverse:latest
+    container_name: traverse
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # Prometheus metrics
+    volumes:
+      - ./config.yaml:/etc/traverse/config.yaml:ro
+      - traverse-data:/var/lib/traverse
+      - ./certs:/etc/traverse/certs:ro
+    environment:
+      # 1Password Connect
+      - OP_CONNECT_TOKEN=${OP_CONNECT_TOKEN}
+      
+      # Duo MFA
+      - DUO_INTEGRATION_KEY=${DUO_INTEGRATION_KEY}
+      - DUO_SECRET_KEY=${DUO_SECRET_KEY}
+      
+      # Slack notifications
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      
+      # Database
+      - DB_PASSWORD=${DB_PASSWORD}
+      
+      # API Keys
+      - SENTINEL_API_KEY_1=${SENTINEL_API_KEY_1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      op-connect-api:
+        condition: service_started
+    networks:
+      - traverse-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # PostgreSQL for request state
+  postgres:
+    image: postgres:16-alpine
+    container_name: traverse-postgres
+    environment:
+      - POSTGRES_USER=traverse
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=traverse
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - traverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traverse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 1Password Connect API
+  op-connect-api:
+    image: 1password/connect-api:latest
+    container_name: op-connect-api
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./1password-credentials.json:/home/opuser/.op/1password-credentials.json:ro
+      - op-data:/home/opuser/.op/data
+    networks:
+      - traverse-network
+    restart: unless-stopped
+
+  # 1Password Connect Sync
+  op-connect-sync:
+    image: 1password/connect-sync:latest
+    container_name: op-connect-sync
+    volumes:
+      - ./1password-credentials.json:/home/opuser/.op/1password-credentials.json:ro
+      - op-data:/home/opuser/.op/data
+    networks:
+      - traverse-network
+    restart: unless-stopped
+
+  # Redis for caching (optional, for high-throughput scenarios)
+  redis:
+    image: redis:7-alpine
+    container_name: traverse-redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - traverse-network
+    restart: unless-stopped
+
+  # Prometheus for metrics collection (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: traverse-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - traverse-network
+    restart: unless-stopped
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: traverse-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - traverse-network
+    restart: unless-stopped
+
+volumes:
+  traverse-data:
+  postgres-data:
+  op-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  traverse-network:
+    driver: bridge

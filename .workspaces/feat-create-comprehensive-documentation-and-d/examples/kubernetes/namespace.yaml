@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traverse
+  labels:
+    app.kubernetes.io/name: traverse
+    app.kubernetes.io/part-of: traverse

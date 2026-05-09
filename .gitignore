@@ -1,1 +1,5 @@
 .yaks/
+traverse
+result
+*.db
+*.log
