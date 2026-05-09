@@ -11,7 +11,8 @@ func TestMainFunction(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	expectedVersion := "1.0.0"
+	// Version is set to "dev" by default, will be overridden at build time
+	expectedVersion := "dev"
 	if version != expectedVersion {
 		t.Errorf("version = %v, want %v", version, expectedVersion)
 	}
