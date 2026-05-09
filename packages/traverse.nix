@@ -17,7 +17,7 @@ in
     src = ./..;
 
     # Vendor hash - will need to be updated when go.mod changes
-    # Set to null initially, then use lib.fakeSha256 to get the real hash
+    # Set to null to use vendor directory (if it exists)
     vendorHash = null;
 
     # Build flags
