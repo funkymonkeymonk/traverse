@@ -1,5 +1,11 @@
 # Traverse
 
+⚠️ **WARNING: COMPLETELY UNTESTED CODE** ⚠️
+
+> **This codebase is entirely AI-generated and has not been tested. It should NOT be used by anyone, anywhere, in its current state without significant scrutiny, security review, and proper testing. This is experimental/prototype code only.**
+
+---
+
 [![Go Report Card](https://goreportcard.com/badge/github.com/funkymonkeymonk/traverse)](https://goreportcard.com/report/github.com/funkymonkeymonk/traverse)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
